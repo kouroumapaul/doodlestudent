@@ -1,22 +1,74 @@
-version: "3.8"
 services:
   db:
     image: mysql
-    ports:
-      - "3306:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_DATABASE=tlc
       - MYSQL_USER=tlc
       - MYSQL_PASSWORD=tlc
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   etherpad:
     image: etherpad/etherpad
     ports:
       - "9001:9001"
     volumes:
       - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+
   mail:
     image: bytemark/smtp
     restart: always
     ports:
       - "2525:25"
+
+  backend:
+    build:
+      context: .
+      dockerfile: src/main/docker/Dockerfile.native
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      etherpad:
+        condition: service_started
+      mail:
+        condition: service_started
+    environment:
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_username=tlc
+      - quarkus_datasource_password=tlc
+      - quarkus_hibernate_orm_database_generation=update
+      - quarkus_mailer_from=olivier.barais@gmail.com
+      - quarkus_mailer_host=mail
+      - quarkus_mailer_port=25
+      - quarkus_mailer_ssl=false
+      - quarkus_mailer_username=""
+      - quarkus_mailer_password=""
+      - quarkus_mailer_mock=true
+      - doodle_usepad=false
+      - doodle_padUrl=http://etherpad:9001/
+      - doodle_padApiKey=changeit
+      - doodle_organizermail=olivier.barais@gmail.com
+
+  frontend:
+    build:
+      context: ../front
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+
+  myadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+    depends_on:
+      - db
