@@ -1,4 +1,4 @@
-# Phase de build
+#Phase de build
 FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-21 AS build
 WORKDIR /build
 
