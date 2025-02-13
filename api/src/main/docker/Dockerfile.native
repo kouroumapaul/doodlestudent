@@ -1,44 +1,35 @@
-####
-# This Dockerfile is used in order to build a container that runs the Quarkus application in native (no JVM) mode
-#
-# Before building the container image run:
-#
-# mvn package -Pnative -Dquarkus.native.container-build=true
-#
-# Then, build the image with:
-#
-# docker build -f src/main/docker/Dockerfile.native -t barais/doodleback-with-quarkus .
-#
-# Then run the container using:
-#
-# docker run -i --rm -p 8080:8080 barais/doodleback-with-quarkus
-#
-###
-FROM registry.access.redhat.com/ubi8/ubi-minimal:8.8
-WORKDIR /work/
-RUN chown 1001 /work \
-    && chmod "g+rwX" /work \
-    && chown 1001:root /work
-COPY --chown=1001:root target/*-runner /work/application
+## Stage 1 : build with maven builder image with native capabilities
+FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-21 AS build
 
+# Copier uniquement les fichiers nécessaires pour le build
+COPY --chown=quarkus:quarkus mvnw /code/mvnw
+COPY --chown=quarkus:quarkus .mvn /code/.mvn
+COPY --chown=quarkus:quarkus pom.xml /code/
+COPY --chown=quarkus:quarkus src /code/src
+USER quarkus
+WORKDIR /code
+
+# Copier le code source
+COPY --chown=quarkus:quarkus src /code/src
+
+# Construire l'application native
+RUN ./mvnw package -Dnative
+
+## Stage 2 : run the application using the native executable
+FROM registry.access.redhat.com/ubi8/ubi-minimal:8.8
+
+# Créer un répertoire de travail et configurer les permissions
+WORKDIR /work/
+RUN chown 1001 /work && chmod "g+rwX" /work && chown 1001:root /work
+
+# Copier l'exécutable natif depuis le build stage
+COPY --from=build /code/target/*-runner /work/application
+
+# Exposer le port
 EXPOSE 8080
+
+# Exécuter l'application en tant qu'utilisateur non privilégié
 USER 1001
 
-# ENV quarkus_datasource_jdbc_url "jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris"
-# ENV quarkus_datasource_username tlc
-# ENV quarkus_datasource_password tlc
-# ENV quarkus_hibernate_orm_database_generation update
-# ENV quarkus_mailer_from olivier.barais@gmail.com
-# ENV quarkus_mailer_host localhost
-# ENV quarkus_mailer_port 2525
-# ENV quarkus_mailer_ssl false
-# ENV quarkus_mailer_username ""
-# ENV quarkus_mailer_password ""
-# ENV quarkus_mailer_mock true
-# ENV doodle_usepad false
-# ENV doodle_padUrl http://etherpad:9001/
-# ENV doodle_padApiKey "changeit"
-# ENV doodle_organizermail "olivier.barais@gmail.com"
-
-
+# Démarrer l'application
 CMD ["./application", "-Dquarkus.http.host=0.0.0.0"]

@@ -25,11 +25,8 @@ services:
   mail:
     image: bytemark/smtp
     restart: always
-
   backend:
-    build:
-      context: .
-      dockerfile: src/main/docker/Dockerfile.native
+    image: paulkourouma/doodle-back:latest 
     restart: unless-stopped
     depends_on:
       db:
@@ -39,7 +36,7 @@ services:
       mail:
         condition: service_started
     environment:
-      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc
       - quarkus_datasource_username=tlc
       - quarkus_datasource_password=tlc
       - quarkus_hibernate_orm_database_generation=update
@@ -47,35 +44,12 @@ services:
       - quarkus_mailer_host=mail
       - quarkus_mailer_port=25
       - quarkus_mailer_ssl=false
-      - quarkus_mailer_username=""
-      - quarkus_mailer_password=""
-      - quarkus_mailer_mock=true
-      - doodle_usepad=false
-      - doodle_padUrl=http://etherpad:9001/
-      - doodle_padApiKey=changeit
-      - doodle_organizermail=olivier.barais@gmail.com
 
   frontend:
-    build:
-      context: ../front
-      dockerfile: Dockerfile
+    image: paulkourouma/doodle-front:latest
     ports:
-      - "80:80"  # Seul le frontend expose un port
+      - "80:80"
     depends_on:
       - backend
-      - myadmin
-      - etherpad
     volumes:
-      - ../front/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-
-  myadmin:
-    image: phpmyadmin/phpmyadmin
-    environment:
-      - PMA_HOST=db
-      - PMA_USER=root
-      - PMA_PASSWORD=root
-    depends_on:
-      - db
-
-volumes:
-  mysql_data:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
