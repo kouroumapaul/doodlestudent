@@ -1,35 +1,26 @@
-## Stage 1 : build with maven builder image with native capabilities
+# Phase de build
 FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-21 AS build
+WORKDIR /build
 
-# Copier uniquement les fichiers nécessaires pour le build
-COPY --chown=quarkus:quarkus mvnw /code/mvnw
-COPY --chown=quarkus:quarkus .mvn /code/.mvn
-COPY --chown=quarkus:quarkus pom.xml /code/
-COPY --chown=quarkus:quarkus src /code/src
-USER quarkus
-WORKDIR /code
-
-# Copier le code source
-COPY --chown=quarkus:quarkus src /code/src
-
-# Construire l'application native
-RUN ./mvnw package -Dnative
-
-## Stage 2 : run the application using the native executable
-FROM registry.access.redhat.com/ubi8/ubi-minimal:8.8
-
-# Créer un répertoire de travail et configurer les permissions
-WORKDIR /work/
-RUN chown 1001 /work && chmod "g+rwX" /work && chown 1001:root /work
-
-# Copier l'exécutable natif depuis le build stage
-COPY --from=build /code/target/*-runner /work/application
-
-# Exposer le port
-EXPOSE 8080
-
-# Exécuter l'application en tant qu'utilisateur non privilégié
+# Copie des fichiers avec les bonnes permissions
+COPY --chown=1001:root . .
 USER 1001
 
-# Démarrer l'application
+# Build de l'application native
+RUN chmod +x mvnw && ./mvnw package -Pnative -DskipTests
+
+# Phase de création de l'image finale
+FROM quay.io/quarkus/quarkus-micro-image:2.0
+WORKDIR /work/
+COPY --from=build /build/target/*-runner /work/application
+
+# Configuration des permissions pour l'image finale
+RUN chmod 775 /work /work/application \
+    && chown -R 1001 /work \
+    && chmod -R "g+rwX" /work \
+    && chown -R 1001:root /work
+
+EXPOSE 8080
+USER 1001
+
 CMD ["./application", "-Dquarkus.http.host=0.0.0.0"]
