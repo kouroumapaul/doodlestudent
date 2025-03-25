@@ -1,17 +1,26 @@
-#Phase de build
+# Phase de build - On utilise l'image Mandrel pour JDK-21
 FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-21 AS build
 WORKDIR /build
 
-# Copie des fichiers avec les bonnes permissions
-COPY --chown=1001:root . .
+# Copie du pom.xml pour télécharger les dépendances en premier (optimisation du cache)
+COPY --chown=1001:root pom.xml mvnw* ./
+COPY --chown=1001:root .mvn ./.mvn
+
+# Téléchargement des dépendances Maven pour exploiter le cache Docker
 USER 1001
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+
+# Copie du reste du code source
+COPY --chown=1001:root src ./src
 
 # Build de l'application native
-RUN chmod +x mvnw && ./mvnw package -Pnative -DskipTests
+RUN ./mvnw package -Pnative -DskipTests
 
-# Phase de création de l'image finale
+# Phase de création de l'image finale - Image plus légère
 FROM quay.io/quarkus/quarkus-micro-image:2.0
 WORKDIR /work/
+
+# Copie du binaire natif
 COPY --from=build /build/target/*-runner /work/application
 
 # Configuration des permissions pour l'image finale
