@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'frontend/**'
+      - 'front/**'
       - '.github/workflows/frontend-ci-cd.yml'
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
-          context: ./frontend
+          context: ./front
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/tlc-frontend:latest
 
@@ -37,6 +37,6 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /chemin/vers/votre/projet
-            docker-compose pull frontend
-            docker-compose up -d frontend
+            cd /root/prod
+            docker-compose -f docker-compose.prod.yml pull frontend
+            docker-compose -f docker-compose.prod.yml up -d

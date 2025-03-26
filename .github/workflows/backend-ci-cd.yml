@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/**'
+      - 'api/**'
       - '.github/workflows/backend-ci-cd.yml'
 
 jobs:
@@ -38,6 +38,6 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /chemin/vers/votre/projet
-            docker-compose pull backend
-            docker-compose up -d backend
+            cd /root/prod
+            docker-compose -f docker-compose.prod.yml pull backend
+            docker-compose -f docker-compose.prod.yml up -d
