@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tlc
+      - MYSQL_USER=tlc
+      - MYSQL_PASSWORD=tlc
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  etherpad:
+    image: etherpad/etherpad
+    volumes:
+      - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+
+  mail:
+    image: bytemark/smtp
+    restart: always
+
+  backend:
+    image: paulkourouma/doodle-back:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      etherpad:
+        condition: service_started
+      mail:
+        condition: service_started
+    environment:
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_username=tlc
+      - quarkus_datasource_password=tlc
+      - quarkus_hibernate_orm_database_generation=update
+      - quarkus_mailer_from=olivier.barais@gmail.com
+      - quarkus_mailer_host=mail
+      - quarkus_mailer_port=25
+      - quarkus_mailer_ssl=false
+      - quarkus_mailer_username=""
+      - quarkus_mailer_password=""
+      - quarkus_mailer_mock=true
+      - doodle_usepad=false
+      - doodle_padUrl=http://etherpad:9001/
+      - doodle_padApiKey=changeit
+      - doodle_organizermail=olivier.barais@gmail.com
+
+  frontend:
+    image: paulkourouma/doodle-front:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - myadmin
+      - etherpad
+    volumes:
+      - ./front/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot:rw
+      - ./certbot/conf:/etc/letsencrypt:rw
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  myadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+    depends_on:
+      - db
+
+  # Ajoutez ces services à votre docker-compose.prod.yml existant
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    depends_on:
+      - cadvisor
+      - node-exporter
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=adminpassword  # Changez ceci pour la production!
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+
+  munin:
+    image: munin/munin:latest
+    volumes:
+      - ./munin/munin.conf:/etc/munin/munin.conf:ro
+      - ./munin/munin-node.conf:/etc/munin/munin-node.conf:ro
+      - munin_data:/var/lib/munin
+      - munin_html:/var/cache/munin/www
+    ports:
+      - "4949:4949"
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+  munin_data:
+  munin_html:
