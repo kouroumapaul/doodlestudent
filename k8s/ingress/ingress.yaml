@@ -1,0 +1,46 @@
+# Ingress pour exposer les services avec routage basé sur les chemins
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+  - host: doodle.paulkourouma.com  # Remplacez par votre nom de domaine
+    http:
+      paths:
+      - path: /api(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8080
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+  - host: pad.paulkourouma.com  # Remplacez par votre nom de domaine
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: etherpad-service
+            port:
+              number: 9001
+  - host: myadmin.paulkourouma.com  # Remplacez par votre nom de domaine
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: myadmin-service
+            port:
+              number: 80

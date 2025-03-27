@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../config/configmap.yaml
+  - ../config/secrets.yaml
+  - ../storage/mysql-pvc.yaml
+  - ../services/mysql.yaml
+  - ../services/mail.yaml
+  - ../services/etherpad.yaml
+  - ../services/backend.yaml
+  - ../services/frontend.yaml
+  - ../services/myadmin.yaml
+  - ../ingress/ingress.yaml
+
+namespace: default

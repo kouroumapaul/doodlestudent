@@ -1,0 +1,32 @@
+# Déploiement du serveur SMTP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mail
+  template:
+    metadata:
+      labels:
+        app: mail
+    spec:
+      containers:
+      - name: mail
+        image: bytemark/smtp
+        ports:
+        - containerPort: 25
+---
+# Service SMTP
+apiVersion: v1
+kind: Service
+metadata:
+  name: mail-service
+spec:
+  selector:
+    app: mail
+  ports:
+  - port: 25
+    targetPort: 25

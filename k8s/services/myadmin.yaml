@@ -1,0 +1,42 @@
+# Déploiement de PHPMyAdmin
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myadmin
+  template:
+    metadata:
+      labels:
+        app: myadmin
+    spec:
+      containers:
+      - name: myadmin
+        image: phpmyadmin/phpmyadmin
+        env:
+        - name: PMA_HOST
+          value: mysql-service
+        - name: PMA_USER
+          value: root
+        - name: PMA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: MYSQL_ROOT_PASSWORD
+        ports:
+        - containerPort: 80
+---
+# Service pour PHPMyAdmin
+apiVersion: v1
+kind: Service
+metadata:
+  name: myadmin-service
+spec:
+  selector:
+    app: myadmin
+  ports:
+  - port: 80
+    targetPort: 80

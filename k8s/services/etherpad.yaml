@@ -1,0 +1,32 @@
+# Déploiement Etherpad
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etherpad
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etherpad
+  template:
+    metadata:
+      labels:
+        app: etherpad
+    spec:
+      containers:
+      - name: etherpad
+        image: etherpad/etherpad
+        ports:
+        - containerPort: 9001
+---
+# Service Etherpad
+apiVersion: v1
+kind: Service
+metadata:
+  name: etherpad-service
+spec:
+  selector:
+    app: etherpad
+  ports:
+  - port: 9001
+    targetPort: 9001
