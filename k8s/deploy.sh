@@ -1,21 +1,21 @@
 #!/bin/bash
 
-# Activer les addons nécessaires de MicroK8s
+# Activer les addons nécessaires de sudo microk8s
 echo "Activation des addons nécessaires..."
-microk8s enable dns ingress storage metrics-server
+sudo microk8s enable dns ingress storage metrics-server
 
 # Appliquer la configuration
 echo "Déploiement de l'application..."
-microk8s kubectl apply -k base/
+sudo microk8s kubectl apply -k base/
 
 # Vérifier le déploiement
 echo "Vérification des ressources déployées..."
 echo "Pods:"
-microk8s kubectl get pods
+sudo microk8s kubectl get pods
 echo "Services:"
-microk8s kubectl get services
+sudo microk8s kubectl get services
 echo "Ingress:"
-microk8s kubectl get ingress
+sudo microk8s kubectl get ingress
 
 # Afficher l'adresse d'accès
 IP=$(hostname -I | awk '{print $1}')
