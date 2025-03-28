@@ -7,7 +7,7 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   rules:
-  - host: doodle.paulkourouma.com  # Remplacez par votre nom de domaine
+  - host: doodle.paulkourouma.com 
     http:
       paths:
       - path: /api(/|$)(.*)
@@ -24,8 +24,7 @@ spec:
             name: frontend-service
             port:
               number: 80
-  - host: pad.paulkourouma.com  # Remplacez par votre nom de domaine
-    http:
+  - host: pad.paulkourouma.com  
       paths:
       - path: /(.*)
         pathType: Prefix
@@ -34,7 +33,7 @@ spec:
             name: etherpad-service
             port:
               number: 9001
-  - host: myadmin.paulkourouma.com  # Remplacez par votre nom de domaine
+  - host: myadmin.paulkourouma.com 
     http:
       paths:
       - path: /(.*)

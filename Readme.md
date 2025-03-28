@@ -842,3 +842,139 @@ Après avoir déployé Grafana, nous avons importé plusieurs tableaux de bord p
 ## Problèmes rencontrés avec Munin
 
 Nous avions également prévu d'installer Munin pour une surveillance complémentaire de notre machine virtuelle. Cependant, nous avons rencontré des difficultés avec la configuration de Munin dans notre environnement Docker. Malgré plusieurs tentatives avec différentes images Docker (notamment `dockurr/munin`), nous avons constaté des erreurs au niveau du montage des volumes et de la configuration.
+
+# Aventure 3: Utilisation de Kubernetes comme orchestrateur d'un petit cluster
+
+Pour cette aventure, nous avons migré notre déploiement Docker Compose vers Kubernetes afin de bénéficier des fonctionnalités avancées d'orchestration et d'ajouter de la redondance à notre backend.
+
+## Installation de MicroK8s
+
+Nous avons choisi MicroK8s pour sa simplicité d'installation et sa légèreté :
+
+```bash
+sudo snap install microk8s --classic --channel=1.28/stable
+sudo usermod -a -G microk8s $USER
+microk8s enable dns storage ingress metrics-server
+```
+
+## Organisation des manifestes Kubernetes
+
+Nous avons adopté une structure organisée pour nos fichiers de configuration Kubernetes :
+
+```
+k8s-doodle/
+├── base/
+├── config/
+├── services/
+├── storage/
+```
+
+Cette structure facilite l'application séquentielle des manifestes en respectant les dépendances.
+
+## Redondance du backend
+
+L'un des principaux objectifs était d'ajouter de la redondance au microservice backend. Dans notre déploiement Kubernetes, nous avons configuré 2 réplicas du backend :
+
+```yaml
+# Extrait du fichier backend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2  # Redondance avec 3 réplicas
+  # [...]
+```
+
+Cette configuration garantit que même si un pod tombe en panne, les deux autres continuent à servir les requêtes, assurant ainsi une haute disponibilité du service.
+
+## Service Discovery et équilibrage de charge
+
+Kubernetes gère automatiquement le service discovery et l'équilibrage de charge entre les pods du backend :
+
+```yaml
+# Extrait du fichier backend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: backend
+```
+
+Ce service dirige le trafic de manière équilibrée vers les trois pods du backend.
+
+## Ingress pour l'accès externe
+
+Pour exposer notre application à l'extérieur du cluster, nous avons configuré un Ingress :
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+spec:
+  rules:
+  - host: doodle.paulkourouma.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8080
+  # [...]
+```
+
+## Tests de résilience
+
+Pour valider la redondance du backend, nous avons simulé des pannes en supprimant manuellement des pods :
+
+```bash
+kubectl delete pod -n doodle backend-69d7bb56c9-z5xlp
+```
+
+Kubernetes a automatiquement créé un nouveau pod pour maintenir le nombre souhaité de 2 réplicas, et le service est resté disponible sans interruption pendant cette opération.
+
+## Avantages observés par rapport à Docker Compose
+
+1. **Haute disponibilité** - Le backend continue de fonctionner même lorsqu'un ou plusieurs pods tombent en panne
+2. **Auto-réparation** - Kubernetes remplace automatiquement les pods défaillants
+3. **Mise à l'échelle simplifiée** - Possibilité d'augmenter ou diminuer le nombre de réplicas avec une simple commande
+4. **Gestion centralisée des ressources** - Limites de CPU et mémoire définies au niveau des pods
+5. **Service discovery automatique** - Les services peuvent se découvrir par nom, facilitant la communication inter-services
+
+## Conclusion
+
+La migration vers Kubernetes nous a permis de comprendre les avantages d'un orchestrateur par rapport à une solution comme Docker Compose. La redondance du backend illustre parfaitement la valeur ajoutée de Kubernetes pour les applications critiques nécessitant une haute disponibilité. Ce déploiement offre une meilleure résilience et pose les bases d'une scalabilité future de notre application.
+
+Bien que l'infrastructure soit plus complexe à mettre en place initialement, les bénéfices en termes de fiabilité et de flexibilité justifient pleinement cette migration pour un environnement de production.
+
+
+# Aventure 4
+
+Nous avons pas pu faire cette aventure
+
+# Auteurs :
+- Paul Kourouma
+- Daouda Traoré
+- Belal Ahmadi
+
+# Conclusion
+Ce projet etait très interessant, il nous a permis de découvrir l'univers du DevOps et d'implementer dans un cas réel le deploiement d'application Cloud Native
+Nous avons apprecié travailler sur le projet
+
+Merci
