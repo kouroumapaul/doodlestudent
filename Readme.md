@@ -831,12 +831,12 @@ Après avoir déployé Grafana, nous avons importé plusieurs tableaux de bord p
 ## Captures
 
 
-![CI/CD](/screenshots/grafana.png)
+![CI/CD](/screenshots/grafana.JPG)
 
-![CI/CD](/screenshots/grafana1.png)
+![CI/CD](/screenshots/grafana1.JPG)
 
 
-![CI/CD](/screenshots/grafana5.png)
+![CI/CD](/screenshots/grafana5.JPG)
 
 
 ## Problèmes rencontrés avec Munin
