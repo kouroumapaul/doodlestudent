@@ -694,3 +694,151 @@ Les deux workflows suivent une logique similaire :
 
 
 - NB : On n'a pas eu le temps de faire passer les tests dans la Pipeline avant deploiement
+
+
+# Aventure 2: Chaîne de monitoring de l'application en production
+
+Pour assurer le suivi des performances et la santé de notre application en production, nous avons mis en place une chaîne de monitoring complète utilisant Prometheus et Grafana.
+
+## Mise en place de Prometheus et Grafana
+
+Nous avons ajouté les services de monitoring à notre stack Docker Compose existante :
+
+```yaml
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=https://grafana.paulkourouma.com
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-network
+    restart: unless-stopped
+```
+
+Nous avons également configuré Prometheus pour collecter les métriques de nos services via un fichier `prometheus.yml` :
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['promotheus:9090']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: 'backend'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['backend:8080']
+```
+
+## Configuration du sous-domaine pour Grafana
+
+Nous avons ajouté un nouveau sous-domaine `grafana.paulkourouma.com` à notre configuration DNS et configuré le proxy nginx pour rediriger le trafic vers le service Grafana :
+
+```nginx
+# Configuration HTTPS pour grafana.paulkourouma.com
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name grafana.paulkourouma.com;
+
+    ssl_certificate /etc/letsencrypt/live/doodle.paulkourouma.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/doodle.paulkourouma.com/privkey.pem;
+    
+    # Redirection vers Grafana
+    location / {
+        proxy_pass http://grafana:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Nous avons également mis à jour la commande certbot pour inclure ce nouveau sous-domaine dans notre certificat SSL :
+
+```yaml
+command: certonly --webroot --webroot-path=/var/www/certbot
+         --email paulledadj@gmail.com --agree-tos --no-eff-email
+         --force-renewal
+         -d doodle.paulkourouma.com -d myadmin.paulkourouma.com -d pad.paulkourouma.com 
+         -d grafana.paulkourouma.com
+```
+
+## Configuration de Grafana
+
+Après avoir déployé Grafana, nous avons importé plusieurs tableaux de bord pour surveiller notre application :
+
+- 1860 : Node Exporter Full (pour surveiller les métriques du système)
+- 10619 : MySQL Overview (pour surveiller votre base de données MySQL)
+- 179 : Docker & System Monitoring (pour surveiller vos conteneurs Docker)
+
+## Captures
+
+
+![CI/CD](/screenshots/grafana.png)
+
+![CI/CD](/screenshots/grafana1.png)
+
+
+![CI/CD](/screenshots/grafana5.png)
+
+
+## Problèmes rencontrés avec Munin
+
+Nous avions également prévu d'installer Munin pour une surveillance complémentaire de notre machine virtuelle. Cependant, nous avons rencontré des difficultés avec la configuration de Munin dans notre environnement Docker. Malgré plusieurs tentatives avec différentes images Docker (notamment `dockurr/munin`), nous avons constaté des erreurs au niveau du montage des volumes et de la configuration.
