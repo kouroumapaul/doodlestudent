@@ -663,7 +663,7 @@ On a donc utilisé Github Actions avec les Runners hebergés chez Github
 
 
 ## Architecture de déploiement
-Nous avons créé deux workflows distincts :
+Nous avons créé deux workflows distincts dans le repertoire `.github/workflows` :
 1. **Backend CI/CD** : pour les composants API
 2. **Frontend CI/CD** : pour l'application front
 
