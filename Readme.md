@@ -683,3 +683,4 @@ Les deux workflows suivent une logique similaire :
 
 ## Resultat
 
+![CI/CD](/screenshots/CI1.png)
