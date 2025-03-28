@@ -653,3 +653,33 @@ Ci dessou un diagramme qui illustre notre deploiement
 
 ![Deploiment](/screenshots/deploiement.png)
 
+
+# Aventure 1
+
+Pour le deploiement continu, on a opté pour Github Actions après avoir eu plein de soucis avec GitlabCI notamment avec les runners auto hebergés et même sur des self hosted runners (machines de l'Istic).
+
+Cela nous à permis aussi de comprendre et tester Github Actions
+
+
+## Architecture de déploiement
+Nous avons créé deux workflows distincts :
+1. **Backend CI/CD** : pour les composants API
+2. **Frontend CI/CD** : pour l'application front
+
+## Fonctionnement des workflows
+
+### Points communs
+Les deux workflows suivent une logique similaire :
+- Déclenchement automatique lors des push sur la branche `main`
+- Construction d'images Docker
+- Publication sur DockerHub
+- Déploiement sur notre serveur de production via SSH
+
+### Spécificités techniques
+- **Filtrage des chemins** : Chaque workflow ne s'exécute que lorsque des modifications sont apportées aux dossiers correspondants
+- **Sécurité** : Utilisation de secrets GitHub pour stocker les informations sensibles
+- **Déploiement** : Utilisation de Docker Compose pour orchestrer les conteneurs sur le serveur
+
+
+## Resultat
+
