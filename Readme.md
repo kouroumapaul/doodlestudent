@@ -659,6 +659,7 @@ Ci dessou un diagramme qui illustre notre deploiement
 Pour le deploiement continu, on a opté pour Github Actions après avoir eu plein de soucis avec GitlabCI notamment avec les runners auto hebergés et même sur des self hosted runners (machines de l'Istic).
 
 Cela nous à permis aussi de comprendre et tester Github Actions
+On a donc utilisé Github Actions avec les Runners hebergés chez Github
 
 
 ## Architecture de déploiement
@@ -684,3 +685,12 @@ Les deux workflows suivent une logique similaire :
 ## Resultat
 
 ![CI/CD](/screenshots/CI1.png)
+
+![CI/CD](/screenshots/CI2.png)
+
+![CI/CD](/screenshots/CI3.png)
+
+![CI/CD](/screenshots/CI4.png)
+
+
+- NB : On n'a pas eu le temps de faire passer les tests dans la Pipeline avant deploiement
