@@ -32,9 +32,7 @@ services:
       - app-network
 
   backend:
-    build:
-      context: .
-      dockerfile: src/main/docker/Dockerfile.jvm
+    image: paulkourouma/tlc-backend:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -74,9 +72,7 @@ services:
       - app-network
 
   frontend:
-    build:
-      context: ../front
-      dockerfile: Dockerfile
+    image: paulkourouma/tlc-frontend:latest
     ports:
       - "80:80"
       - "443:443"
@@ -100,8 +96,8 @@ services:
       - frontend
     # Pour le test, on va utiliser la commande "--dry-run"
     # Une fois testé, vous pouvez retirer "--dry-run"
-    command: certonly --webroot --webroot-path=/var/www/certbot 
-             --email paulledadj@gmail.com --agree-tos --no-eff-email 
+    command: certonly --webroot --webroot-path=/var/www/certbot
+             --email paulledadj@gmail.com --agree-tos --no-eff-email
              --force-renewal
              -d doodle.paulkourouma.com -d myadmin.paulkourouma.com -d pad.paulkourouma.com
 

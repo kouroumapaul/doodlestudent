@@ -1,15 +1,655 @@
-# Remote meetings planning
 
-This project is used in a course on the *ops* part at the [University of Rennes](https://www.univ-rennes1.fr/), France. It is a kind of doodle clone developed in so-called "native cloud" technologies in order to allow students to work on a continuous deployment chain in a containerized environment. Among the feature, the application automatically initializes a pad for the meeting and a chat room for the meeting participants.
 
-- The [back](https://github.com/barais/doodlestudent/tree/main/api) is developed using the [quarkus.io](https://quarkus.io/) framework. 
-- The [front](https://github.com/barais/doodlestudent/tree/main/front) is developed in [angular](https://angular.io/) using the [primeng](https://www.primefaces.org/primeng/)  angular UI component library and the [fullcalendar](https://fullcalendar.io/) graphical component.
+## Tache 1. Préparation des Dockerfiles
 
-A demo of the application is available [here](https://doodle.diverse-team.fr/).
+### Backend (Quarkus)
 
-Three videos (in french) are available. They present:
-- the [main application feature](https://drive.google.com/file/d/1GQbdgq2CHcddTlcoHqM5Zc8Dw5o_eeLg/preview), 
-- its [architecture](https://drive.google.com/file/d/1l5UAsU5_q-oshwEW6edZ4UvQjN3-tzwi/preview) 
-- and a [short code review](https://drive.google.com/file/d/1jxYNfJdtd4r_pDbOthra360ei8Z17tX_/preview) .
+N'ayant pas un ordinateur assez puissant pour executer la version native, nous avons utilisé la version JVM 
 
-For french native speaker that wants to follow the course. The course web page is available [here](https://hackmd.diverse-team.fr/s/SJqu5DjSD).
+Dockerfile pour le backend dans `src/main/docker/Dockerfile.jvm` :
+
+
+```dockerfile
+# Etape de build rajouté
+FROM maven:3.8-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn package -DskipTests
+
+# Runtime stage
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.16
+
+
+# Nous créons quatre couches distinctes pour optimiser la réutilisation des couches
+COPY --from=build --chown=185 /app/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /app/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /app/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /app/target/quarkus-app/quarkus/ /deployments/quarkus/
+
+EXPOSE 8080
+USER 185
+ENV JAVA_OPTS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
+
+ENTRYPOINT [ "/opt/jboss/container/java/run/run-java.sh" ]
+```
+
+### Frontend (Angular + Nginx)
+
+Nous avons rajouté à l'image de l'application frontend un serveur nginx qui servira de reverse proxy
+
+Dockerfile pour le frontend dans `../front/Dockerfile` :
+
+```dockerfile
+# Stage 1: Build the Angular application
+FROM node:18 as build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# Stage 2: Serve the application with Nginx
+FROM nginx:alpine
+COPY --from=build /app/dist/* /usr/share/nginx/html/
+```
+
+## Configuration des Docker Compose
+
+Nous avons créé deux fichiers docker-compose distincts pour différents environnements :
+
+### Version pour développement local (construction des images)
+
+Cette version est utilisée pour le développement local et construit les images à partir des Dockerfiles locaux.
+
+Créez un fichier `api/docker-compose.yaml` :
+
+```yaml
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tlc
+      - MYSQL_USER=tlc
+      - MYSQL_PASSWORD=tlc
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-network
+
+  etherpad:
+    image: etherpad/etherpad
+    volumes:
+      - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+    networks:
+      - app-network
+
+  mail:
+    image: bytemark/smtp
+    restart: always
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: src/main/docker/Dockerfile.jvm
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      etherpad:
+        condition: service_started
+      mail:
+        condition: service_started
+    environment:
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_username=tlc
+      - quarkus_datasource_password=tlc
+      - quarkus_hibernate_orm_database_generation=update
+      - quarkus_mailer_from=olivier.barais@gmail.com
+      - quarkus_mailer_host=mail
+      - quarkus_mailer_port=25
+      - quarkus_mailer_ssl=false
+      - quarkus_mailer_username=""
+      - quarkus_mailer_password=""
+      - quarkus_mailer_mock=true
+      - doodle_usepad=false
+      - doodle_padUrl=http://etherpad:9001/
+      - doodle_padApiKey=changeit
+      - doodle_organizermail=olivier.barais@gmail.com
+    networks:
+      - app-network
+
+  myadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ../front
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - myadmin
+      - etherpad
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:rw
+    networks:
+      - app-network
+
+networks:
+  app-network:
+
+volumes:
+  mysql_data:
+```
+
+### Version pour production (utilisant les images d'un registry)
+
+Pour le déploiement en production, on a utilisé une version qui récupère les images pré-construites dans notre registry
+
+ `docker-compose.prod.yaml` :
+
+```yaml
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tlc
+      - MYSQL_USER=tlc
+      - MYSQL_PASSWORD=tlc
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-network
+
+  etherpad:
+    image: etherpad/etherpad
+    volumes:
+      - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+    networks:
+      - app-network
+
+  mail:
+    image: bytemark/smtp
+    restart: always
+    networks:
+      - app-network
+
+  backend:
+    image: paulkourouma/tlc-backend:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      etherpad:
+        condition: service_started
+      mail:
+        condition: service_started
+    environment:
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_username=tlc
+      - quarkus_datasource_password=tlc
+      - quarkus_hibernate_orm_database_generation=update
+      - quarkus_mailer_from=votre-email@example.com
+      - quarkus_mailer_host=mail
+      - quarkus_mailer_port=25
+      - quarkus_mailer_ssl=false
+      - quarkus_mailer_username=""
+      - quarkus_mailer_password=""
+      - quarkus_mailer_mock=true
+      - doodle_usepad=false
+      - doodle_padUrl=http://etherpad:9001/
+      - doodle_padApiKey=changeit
+      - doodle_organizermail=votre-email@example.com
+    networks:
+      - app-network
+
+  myadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  frontend:
+    image: paulkourouma/tlc-frontend:latest
+    ports:
+      - "80:80" # Seul ces ports sont exposés
+      - "443:443" # Pareil
+    depends_on:
+      - backend
+      - myadmin
+      - etherpad
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:rw
+    networks:
+      - app-network
+    restart: always
+
+    depends_on:
+      - frontend
+
+networks:
+  app-network:
+
+volumes:
+  mysql_data:
+```
+
+
+
+## Préparez les répertoires pour Certbot et Nginx
+
+```bash
+# Créez les répertoires nécessaires
+mkdir -p nginx/conf.d
+mkdir -p certbot/www certbot/conf
+```
+
+## Déploiement complet avec SSL
+
+### Tache 2 : Configuration Nginx comme reverse proxy
+
+Pour se faciliter la tâche on a utilisé un DNS custom
+
+```
+doodle.paulkourouma.com    IN A    103.241.67.30
+myadmin.paulkourouma.com   IN A    103.241.67.30
+pad.paulkourouma.com       IN A    103.241.67.30
+```
+ 
+On crée un nouveau fichier de configuration nginx  `front/nginx.conf` :
+
+```nginx
+# Journalisation
+error_log /var/log/nginx/error.log warn;
+access_log /var/log/nginx/access.log;
+
+# Configuration pour doodle.paulkourouma.com (application principale)
+server {
+    listen 80;
+    server_name doodle.paulkourouma.com;
+    
+    # Routage des API vers le backend
+    location /api {
+        proxy_pass http://backend:8080/api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Servir les fichiers statiques du frontend
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+        try_files $uri $uri/ /index.html?$args;
+    }
+}
+
+# Configuration pour myadmin.paulkourouma.com (phpMyAdmin)
+server {
+    listen 80;
+    server_name myadmin.paulkourouma.com;
+    
+    # Redirection vers phpMyAdmin
+    location / {
+        proxy_pass http://myadmin:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Configuration pour pad.paulkourouma.com (Etherpad)
+server {
+    listen 80;
+    server_name pad.paulkourouma.com;
+    
+    # Redirection vers Etherpad
+    location / {
+        proxy_pass http://etherpad:9001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Configuration par défaut
+server {
+    listen 80 default_server;
+    server_name _;
+    
+    return 301 http://doodle.paulkourouma.com$request_uri;
+}
+```
+
+
+En executant la commande
+```bash
+docker compose up --build
+```
+On a l'application qui se lance mais sans certificat ssl
+
+
+### Obtention dles certificats SSL avec Let's Encrypt et configuration
+
+Pour ajouter certbot on a mis à jour notre docker compose
+
+```yaml
+version: "3.8"
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tlc
+      - MYSQL_USER=tlc
+      - MYSQL_PASSWORD=tlc
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-network
+
+  etherpad:
+    image: etherpad/etherpad
+    volumes:
+      - ./APIKEY.txt:/opt/etherpad-lite/APIKEY.txt
+    networks:
+      - app-network
+
+  mail:
+    image: bytemark/smtp
+    restart: always
+    networks:
+      - app-network
+
+  backend:
+    image: paulkourouma/tlc-backend:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      etherpad:
+        condition: service_started
+      mail:
+        condition: service_started
+    environment:
+      - quarkus_datasource_jdbc_url=jdbc:mysql://db:3306/tlc?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&createDatabaseIfNotExist=true&serverTimezone=Europe/Paris
+      - quarkus_datasource_username=tlc
+      - quarkus_datasource_password=tlc
+      - quarkus_hibernate_orm_database_generation=update
+      - quarkus_mailer_from=olivier.barais@gmail.com
+      - quarkus_mailer_host=mail
+      - quarkus_mailer_port=25
+      - quarkus_mailer_ssl=false
+      - quarkus_mailer_username=""
+      - quarkus_mailer_password=""
+      - quarkus_mailer_mock=true
+      - doodle_usepad=false
+      - doodle_padUrl=http://etherpad:9001/
+      - doodle_padApiKey=changeit
+      - doodle_organizermail=olivier.barais@gmail.com
+    networks:
+      - app-network
+
+  myadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  frontend:
+    image: paulkourouma/tlc-frontend:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - myadmin
+      - etherpad
+    volumes:
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    networks:
+      - app-network
+    restart: always
+
+  certbot: # Ajout du service
+    image: certbot/certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot:rw
+      - ./certbot/conf:/etc/letsencrypt:rw
+    depends_on:
+      - frontend
+    # Pour le test, on va utiliser la commande "--dry-run"
+    # Une fois testé, vous pouvez retirer "--dry-run"
+    command: certonly --webroot --webroot-path=/var/www/certbot
+             --email paulledadj@gmail.com --agree-tos --no-eff-email
+             --force-renewal
+             -d doodle.paulkourouma.com -d myadmin.paulkourouma.com -d pad.paulkourouma.com
+
+networks:
+  app-network:
+
+volumes:
+  mysql_data:
+
+```
+
+On note l'ajout du service, et à la suite on lance la commande pour obtenir les certificats pour nos dommais 
+
+```bash
+# Remplacez votre-email@example.com par votre adresse email réelle
+docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot \
+  --email paul@gmail.com --agree-tos --no-eff-email \
+  -d doodle.paulkourouma.com -d myadmin.paulkourouma.com -d pad.paulkourouma.com
+```
+
+On aura donc les certificats qui seront généré et on les utilises dans l enouveau fichier de conf nginx pour en tenir compte
+
+
+### Mise à jour de la configuration Nginx pour HTTPS
+
+Modifiez le fichier `front/nginx.conf` :
+
+```nginx
+# Journalisation
+error_log /var/log/nginx/error.log warn;
+access_log /var/log/nginx/access.log;
+
+# Journalisation
+error_log /var/log/nginx/error.log warn;
+access_log /var/log/nginx/access.log;
+
+# Configuration HTTP pour tous les domaines (pour la vérification Certbot)
+server {
+    listen 80;
+    listen [::]:80;
+    
+    # Cette location est utilisée par Certbot pour la validation
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    # Redirection vers HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Configuration HTTPS pour doodle.paulkourouma.com
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name doodle.paulkourouma.com;
+
+    ssl_certificate /etc/letsencrypt/live/doodle.paulkourouma.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/doodle.paulkourouma.com/privkey.pem;
+    
+    # Routage des API vers le backend
+    location /api {
+        proxy_pass http://backend:8080/api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Servir les fichiers statiques du frontend
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+        try_files $uri $uri/ /index.html?$args;
+    }
+}
+
+# Configuration HTTPS pour myadmin.paulkourouma.com
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name myadmin.paulkourouma.com;
+
+    ssl_certificate /etc/letsencrypt/live/doodle.paulkourouma.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/doodle.paulkourouma.com/privkey.pem;
+    
+    # Redirection vers phpMyAdmin
+    location / {
+        proxy_pass http://myadmin:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Configuration HTTPS pour pad.paulkourouma.com
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name pad.paulkourouma.com;
+
+    ssl_certificate /etc/letsencrypt/live/doodle.paulkourouma.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/doodle.paulkourouma.com/privkey.pem;
+    
+    # Redirection vers Etherpad
+    location / {
+        proxy_pass http://etherpad:9001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Pour bien sécuriser le tout on ajout un Pare feu avec quelques règles
+
+
+
+
+## Configuration du pare-feu UFW
+
+Installez et configurez UFW :
+
+```bash
+# Installation
+apt update
+apt install ufw
+
+# Configuration de base - bloquer tout le trafic entrant et autoriser tout le trafic sortant
+ufw default deny incoming
+ufw default allow outgoing
+
+# Autoriser SSH (Pour maintenir l'accès au serveur)
+ufw allow ssh
+
+# Autoriser HTTP et HTTPS
+ufw allow 80/tcp
+ufw allow 443/tcp
+
+# Activer le pare-feu
+ufw enable
+```
+
+Vérifiez l'état du pare-feu :
+
+```bash
+ufw status verbose
+```
+
+## Vérifiez que tout fonctionne correctement
+
+Démarrez tous les services :
+
+```bash
+docker compose up -d
+```
+
+Puis vérifiez que tout fonctionne correctement :
+
+- Accédez à https://doodle.paulkourouma.com 
+![Doodle](/screenshots/doodle.png)
+
+- Accédez à https://myadmin.paulkourouma.com 
+![PhpMyAdmin](/screenshots/admin.png)
+
+- Accédez à https://pad.paulkourouma.com 
+![Pad](/screenshots/pad.png)
+
+
+### Diagramme
+
+Ci dessou un diagramme qui illustre notre deploiement
+
+![Deploiment](/screenshots/deploiement.png)
+
