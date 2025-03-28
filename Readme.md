@@ -882,7 +882,7 @@ kind: Deployment
 metadata:
   name: backend
 spec:
-  replicas: 2  # Redondance avec 3 réplicas
+  replicas: 2  # Redondance avec 2 réplicas
   # [...]
 ```
 
